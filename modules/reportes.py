@@ -7,6 +7,7 @@ inteligentes aplicados por el usuario en el momento de la exportacion.
 --------------------------------------------------------------------------------
 """
 
+import textwrap
 from datetime import datetime
 from io import BytesIO
 
@@ -16,6 +17,19 @@ from docx.shared import Pt, RGBColor
 from fpdf import FPDF
 
 from config.settings import APP_ENTITY, APP_FULL_NAME, APP_NAME
+
+
+def _write_wrapped(pdf: FPDF, texto: str, ancho_caracteres: int = 100, alto_linea: int = 6):
+    """
+    Escribe texto envolviendo lineas manualmente con textwrap y dibujando cada
+    linea con pdf.cell(). Evita un problema conocido de fpdf2 en el que
+    multi_cell() puede lanzar FPDFException ("Not enough horizontal space to
+    render a single character") en ciertas combinaciones de texto y ancho.
+    """
+    texto = str(texto) if texto else ""
+    lineas = textwrap.wrap(texto, width=ancho_caracteres) or [""]
+    for linea in lineas:
+        pdf.cell(0, alto_linea, linea, ln=1)
 
 
 # --------------------------------------------------------------------------------
@@ -114,7 +128,7 @@ def generar_reporte_pdf(df: pd.DataFrame, kpis: dict, recomendaciones: list, ana
         pdf.cell(0, 8, "Analisis ejecutivo", ln=1)
         pdf.set_text_color(30, 30, 30)
         pdf.set_font("Helvetica", "", 10)
-        pdf.multi_cell(0, 6, analisis_texto)
+        _write_wrapped(pdf, analisis_texto)
         pdf.ln(2)
 
     pdf.set_font("Helvetica", "B", 12)
@@ -123,7 +137,7 @@ def generar_reporte_pdf(df: pd.DataFrame, kpis: dict, recomendaciones: list, ana
     pdf.set_text_color(30, 30, 30)
     pdf.set_font("Helvetica", "", 10)
     for r in recomendaciones:
-        pdf.multi_cell(0, 6, f"- {r}")
+        _write_wrapped(pdf, f"- {r}")
     pdf.ln(4)
 
     pdf.set_font("Helvetica", "B", 12)
