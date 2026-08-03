@@ -192,3 +192,5 @@ st.caption(
     "SIGATA | Producto Minimo Viable desarrollado para la estrategia de innovacion de la "
     "Subdireccion de Aprovechamiento - UAESP. Los datos mostrados por defecto son ilustrativos."
 )
+
+ui.render_footer()
