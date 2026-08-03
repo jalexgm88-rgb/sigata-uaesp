@@ -96,3 +96,6 @@ else:
         documentos[["nombre_archivo", "tipo_documento", "fecha_carga"]],
         use_container_width=True, hide_index=True,
     )
+
+
+ui.render_footer()

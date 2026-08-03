@@ -56,3 +56,6 @@ if archivo is not None:
     )
 else:
     st.info("Aun no se ha cargado ningun archivo en esta sesion.")
+
+
+ui.render_footer()

@@ -57,3 +57,6 @@ if st.button("Confirmar mapeo y cargar datos a SIGATA", type="primary", use_cont
         "El Dashboard Ejecutivo y las demas paginas ya reflejan esta informacion."
     )
     st.dataframe(df_mapeado.head(15), use_container_width=True)
+
+
+ui.render_footer()

@@ -148,3 +148,6 @@ elif entidad == "Lineas de accion":
         {"key": "descripcion", "label": "Descripcion", "tipo": "area"},
     ]
     render_entity_crud("lineas_accion", "Lineas de accion", campos)
+
+
+ui.render_footer()

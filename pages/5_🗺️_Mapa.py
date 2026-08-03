@@ -47,3 +47,6 @@ st.caption(
     "direccion exacta), con el fin de representar de forma visual la concentracion territorial "
     "de organizaciones, recicladores y beneficios."
 )
+
+
+ui.render_footer()

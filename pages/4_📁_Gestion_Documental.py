@@ -70,3 +70,6 @@ else:
             if c3.button("Eliminar", key=f"del_doc_{doc['id']}"):
                 eliminar_documento(int(doc["id"]), doc["ruta_archivo"])
                 st.rerun()
+
+
+ui.render_footer()

@@ -60,3 +60,6 @@ else:
             """,
             unsafe_allow_html=True,
         )
+
+
+ui.render_footer()

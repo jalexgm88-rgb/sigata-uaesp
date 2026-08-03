@@ -83,3 +83,6 @@ with col3:
         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         use_container_width=True,
     )
+
+
+ui.render_footer()
