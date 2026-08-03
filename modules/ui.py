@@ -8,6 +8,9 @@ visual consistente en toda la aplicacion.
 --------------------------------------------------------------------------------
 """
 
+import base64
+from pathlib import Path
+
 import streamlit as st
 
 from config.settings import (
@@ -15,6 +18,19 @@ from config.settings import (
     COLOR_GRAY_DARK, COLOR_GRAY_LIGHT, COLOR_PRIMARY_GREEN, COLOR_PRIMARY_GREEN_DARK,
     COLOR_PRIMARY_GREEN_LIGHT,
 )
+
+_LOGO_PATH = Path(__file__).resolve().parent.parent / "assets" / "logo_uaesp.png"
+
+
+@st.cache_data(show_spinner=False)
+def _logo_base64() -> str:
+    """Lee el logo institucional de UAESP y lo retorna codificado en base64.
+    Si el archivo no existe, retorna cadena vacia (el encabezado se muestra
+    igual, simplemente sin logo)."""
+    try:
+        return base64.b64encode(_LOGO_PATH.read_bytes()).decode("utf-8")
+    except FileNotFoundError:
+        return ""
 
 
 def inject_global_css():
@@ -34,6 +50,20 @@ def inject_global_css():
         }}
         p, span, div, label {{
             font-family: 'Segoe UI', Arial, sans-serif;
+        }}
+        .sigata-logo-bar {{
+            display: flex;
+            align-items: center;
+            background: #FFFFFF;
+            border: 1px solid #E7EAEC;
+            border-radius: 12px;
+            padding: 10px 20px;
+            margin-bottom: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+        }}
+        .sigata-logo-bar img {{
+            height: 34px;
+            width: auto;
         }}
         .sigata-header {{
             display: flex;
@@ -138,6 +168,16 @@ def inject_global_css():
 
 
 def render_header(subtitulo: str = ""):
+    logo_b64 = _logo_base64()
+    if logo_b64:
+        st.markdown(
+            f"""
+            <div class="sigata-logo-bar">
+                <img src="data:image/png;base64,{logo_b64}" alt="UAESP" />
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
     st.markdown(
         f"""
         <div class="sigata-header">
