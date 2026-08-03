@@ -258,11 +258,11 @@ def render_footer():
             distinto al academico debera contar con autorizacion expresa de sus autores.
         </div>
         <div class="sigata-footer">
-            Disenado y prototipado por el equipo: <b>Danyi Paola Villa Cadena</b> ·
-            <b>Natalia Isabel Rivera Rueda</b> · <b>Nilson Gabriel Quinonez Males</b> ·
-            <b>Jose Alexander Gomez Mantilla</b><br>
-            En el marco de la asignatura <b>Pensamiento Disruptivo</b> de la Maestria en
-            Administracion de Empresas, con la guia del docente <b>Alexis Gonzalez Marcelo</b>.
+            Diseñado y prototipado por el equipo: <b>Danyi Paola Villa Cadena</b> ·
+            <b>Natalia Isabel Rivera Rueda</b> · <b>Nilson Gabriel Quiñonez Males</b> ·
+            <b>José Alexander Gómez Mantilla</b><br>
+            En el marco de la asignatura <b>Pensamiento Disruptivo</b> de la Maestría en
+            Administración de Empresas, con la guía del docente <b>Alexis González Marcelo</b>.
         </div>
         """,
         unsafe_allow_html=True,
