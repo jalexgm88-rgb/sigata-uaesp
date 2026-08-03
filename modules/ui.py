@@ -161,6 +161,16 @@ def inject_global_css():
         div[data-testid="stMetricValue"] {{
             color: {COLOR_PRIMARY_GREEN_DARK};
         }}
+        .sigata-footer {{
+            margin-top: 36px;
+            padding-top: 16px;
+            border-top: 1px solid #E7EAEC;
+            font-size: 12px;
+            color: #8A9096;
+            line-height: 1.6;
+            text-align: center;
+        }}
+        .sigata-footer b {{ color: {COLOR_GRAY_DARK}; }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -222,3 +232,19 @@ def render_recomendaciones(lista: list):
 
 def section_title(texto: str):
     st.markdown(f'<div class="section-title">{texto}</div>', unsafe_allow_html=True)
+
+
+def render_footer():
+    """Creditos del equipo que diseno y prototipo SIGATA como MVP academico."""
+    st.markdown(
+        """
+        <div class="sigata-footer">
+            Disenado y prototipado por el equipo: <b>Danyi Paola Villa Cadena</b> ·
+            <b>Natalia Isabel Rivera Rueda</b> · <b>Nilson Gabriel Quinonez Males</b> ·
+            <b>Jose Alexander Gomez Mantilla</b><br>
+            En el marco de la asignatura <b>Pensamiento Disruptivo</b> de la Maestria en
+            Administracion de Empresas, con la guia del docente <b>Alexis Gonzalez Marcelo</b>.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
