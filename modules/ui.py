@@ -57,12 +57,12 @@ def inject_global_css():
             background: #FFFFFF;
             border: 1px solid #E7EAEC;
             border-radius: 12px;
-            padding: 10px 20px;
+            padding: 16px 24px;
             margin-bottom: 10px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.04);
         }}
         .sigata-logo-bar img {{
-            height: 34px;
+            height: 64px;
             width: auto;
         }}
         .sigata-header {{
