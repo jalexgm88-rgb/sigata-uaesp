@@ -171,6 +171,17 @@ def inject_global_css():
             text-align: center;
         }}
         .sigata-footer b {{ color: {COLOR_GRAY_DARK}; }}
+        .sigata-disclaimer {{
+            background: #FBF7E9;
+            border: 1px solid #EFE2B0;
+            border-radius: 10px;
+            padding: 12px 18px;
+            font-size: 11.5px;
+            color: #6B5D2A;
+            line-height: 1.6;
+            text-align: center;
+            margin-bottom: 14px;
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -235,9 +246,17 @@ def section_title(texto: str):
 
 
 def render_footer():
-    """Creditos del equipo que diseno y prototipo SIGATA como MVP academico."""
+    """Aviso legal/academico y creditos del equipo que diseno y prototipo SIGATA."""
     st.markdown(
         """
+        <div class="sigata-disclaimer">
+            <b>Aviso:</b> El contenido de esta aplicacion corresponde exclusivamente a fines
+            academicos y de investigacion. No tiene caracter comercial, ni implica tratamiento
+            real de datos personales fuera del ambito educativo. Los datos, ejemplos y
+            visualizaciones son simulados o anonimizados, conforme a los principios de la
+            Ley 1581 de 2012 sobre proteccion de datos personales en Colombia. Cualquier uso
+            distinto al academico debera contar con autorizacion expresa de sus autores.
+        </div>
         <div class="sigata-footer">
             Disenado y prototipado por el equipo: <b>Danyi Paola Villa Cadena</b> ·
             <b>Natalia Isabel Rivera Rueda</b> · <b>Nilson Gabriel Quinonez Males</b> ·
