@@ -25,18 +25,22 @@ from config.settings import (
 from modules.database import get_connection, insert_row, set_metadata
 
 fake = Faker("es_CO")
-random.seed(42)
-Faker.seed(42)
+random.seed(2026)
+Faker.seed(2026)
 
+# NOTA DE PRIVACIDAD: los nombres de organizacion listados a continuacion son
+# enteramente ficticios (supuestos), construidos solo para efectos de la
+# demostracion academica. Cualquier coincidencia con organizaciones reales de
+# recicladores de oficio es involuntaria. No representan entidades existentes.
 NOMBRES_ORGANIZACIONES = [
-    "Asociacion de Recicladores Nuevo Amanecer", "ARB Renacer del Sur",
-    "Cooperativa de Recicladores El Progreso", "Asociacion Manos que Reciclan",
-    "ARB Vida Verde Bogota", "Organizacion Recicladores Unidos de Bosa",
-    "Cooperativa Ecologica Kennedy", "Asociacion Reciclaje con Dignidad",
-    "ARB Fuerza Ambiental Ciudad Bolivar", "Cooperativa Nueva Esperanza",
-    "Asociacion Recuperadores Ambientales de Usme", "ARB Semillas de Cambio",
-    "Cooperativa Manos Limpias", "Asociacion Reciclando Futuro",
-    "Organizacion Comunitaria Recicla Bogota",
+    "Asociacion Renacer Verde", "Cooperativa Horizonte Reciclador",
+    "ARB Nueva Vida Sostenible", "Asociacion Manos Unidas por el Ambiente",
+    "Cooperativa Raices del Reciclaje", "Organizacion Comunitaria Sendero Verde",
+    "ARB Amanecer Sostenible", "Asociacion Progreso Circular",
+    "Cooperativa Tierra Fertil", "ARB Vision Ecologica",
+    "Asociacion Union Recicladora", "Cooperativa Nuevo Horizonte Ambiental",
+    "Organizacion Semillas del Futuro", "ARB Esperanza Circular",
+    "Asociacion Manos Verdes de Bogota",
 ]
 
 
@@ -56,7 +60,7 @@ def _generar_organizaciones(n=15):
         fecha_const = _random_date(datetime(2015, 1, 1), datetime(2022, 12, 31))
         row = {
             "nombre": nombre,
-            "nit": f"9{random.randint(10000000, 99999999)}-{random.randint(0,9)}",
+            "nit": f"90{random.randint(1000000, 9999999)}-{random.randint(0,9)}",
             "localidad": loc,
             "fecha_constitucion": fecha_const.strftime("%Y-%m-%d"),
             "representante": fake.name(),
@@ -75,9 +79,9 @@ def _generar_recicladores(organizaciones, n=220):
     registros = []
     documentos_usados = set()
     for _ in range(n):
-        doc = str(random.randint(1_000_000_000, 1_099_999_999))
+        doc = str(random.randint(1_200_000_000, 1_299_999_999))
         while doc in documentos_usados:
-            doc = str(random.randint(1_000_000_000, 1_099_999_999))
+            doc = str(random.randint(1_200_000_000, 1_299_999_999))
         documentos_usados.add(doc)
         sexo = random.choices(SEXOS, weights=[0.52, 0.44, 0.02, 0.02])[0]
         nombre = fake.name_female() if sexo == "Femenino" else fake.name_male() if sexo == "Masculino" else fake.name()
