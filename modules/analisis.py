@@ -151,16 +151,72 @@ def analizar_beneficios(df: pd.DataFrame) -> str:
 # --------------------------------------------------------------------------------
 # Motor de recomendaciones
 # --------------------------------------------------------------------------------
-def generar_recomendaciones(df: pd.DataFrame, kpis: dict) -> list:
+# Metadatos de priorizacion para cada tipo de recomendacion. Se usan
+# unicamente en las vistas enriquecidas (matriz visual del Informe
+# Ejecutivo); no alteran el texto ni la logica original de cada
+# recomendacion, solo la clasifican para su presentacion.
+_META_RECOMENDACIONES = {
+    "cobertura_territorial": {
+        "icono": "pin", "impacto": "Equidad territorial",
+        "prioridad": "Alta", "responsable": "Gestor Territorial",
+        "horizonte": "Corto plazo (0-3 meses)",
+    },
+    "participacion_organizaciones": {
+        "icono": "objetivo", "impacto": "Fortalecimiento asociativo",
+        "prioridad": "Media", "responsable": "Coordinacion de Organizaciones",
+        "horizonte": "Mediano plazo (3-6 meses)",
+    },
+    "ejecucion_presupuestal": {
+        "icono": "dinero", "impacto": "Optimizacion financiera",
+        "prioridad": "Alta", "responsable": "Subdireccion de Aprovechamiento",
+        "horizonte": "Corto plazo (0-3 meses)",
+    },
+    "programa_destacado": {
+        "icono": "bombilla", "impacto": "Escalamiento de buenas practicas",
+        "prioridad": "Media", "responsable": "Enlace ODS 12",
+        "horizonte": "Mediano plazo (3-6 meses)",
+    },
+    "informacion_incompleta": {
+        "icono": "documento", "impacto": "Calidad e integridad de datos",
+        "prioridad": "Media", "responsable": "Equipo Social UAESP",
+        "horizonte": "Corto plazo (0-3 meses)",
+    },
+    "acciones_pendientes": {
+        "icono": "reloj", "impacto": "Cumplimiento de metas",
+        "prioridad": "Alta", "responsable": "Subdireccion de Aprovechamiento",
+        "horizonte": "Corto plazo (0-3 meses)",
+    },
+    "gestion_adecuada": {
+        "icono": "check", "impacto": "Sostenibilidad de resultados",
+        "prioridad": "Baja", "responsable": "Subdireccion de Aprovechamiento",
+        "horizonte": "Largo plazo (6-12 meses)",
+    },
+    "sin_datos": {
+        "icono": "documento", "impacto": "Disponibilidad de informacion",
+        "prioridad": "Alta", "responsable": "Subdireccion de Aprovechamiento",
+        "horizonte": "Corto plazo (0-3 meses)",
+    },
+}
+
+
+def _generar_recomendaciones_detalladas(df: pd.DataFrame, kpis: dict) -> list:
     """
-    Genera una lista de recomendaciones accionables a partir de los KPIs y del
-    comportamiento de los datos filtrados. Las recomendaciones cambian de forma
-    automatica segun la informacion visualizada.
+    Motor unico de recomendaciones: evalua las mismas reglas deterministicas
+    sobre los datos filtrados y retorna cada recomendacion como diccionario
+    ({categoria, texto, icono, impacto, prioridad, responsable, horizonte}).
+    `generar_recomendaciones()` y `generar_recomendaciones_matriz()` son dos
+    proyecciones distintas de este mismo resultado (texto plano vs. matriz
+    enriquecida), por lo que ambas permanecen siempre sincronizadas.
     """
-    recomendaciones = []
+    detalladas = []
+
+    def _agregar(categoria, texto):
+        meta = _META_RECOMENDACIONES[categoria]
+        detalladas.append({"categoria": categoria, "texto": texto, **meta})
 
     if df.empty:
-        return ["Cargue informacion o amplie los filtros seleccionados para generar recomendaciones."]
+        _agregar("sin_datos", "Cargue informacion o amplie los filtros seleccionados para generar recomendaciones.")
+        return detalladas
 
     # Cobertura territorial
     conteo_loc = df.groupby("localidad")["documento"].nunique()
@@ -169,9 +225,10 @@ def generar_recomendaciones(df: pd.DataFrame, kpis: dict) -> list:
         promedio = conteo_loc.mean()
         rezagadas = conteo_loc[conteo_loc < promedio * 0.6].index.tolist()
         if rezagadas:
-            recomendaciones.append(
+            _agregar(
+                "cobertura_territorial",
                 f"Fortalecer las acciones afirmativas en las localidades con baja cobertura relativa: "
-                f"{', '.join(rezagadas[:3])}."
+                f"{', '.join(rezagadas[:3])}.",
             )
 
     # Participacion de organizaciones
@@ -180,76 +237,118 @@ def generar_recomendaciones(df: pd.DataFrame, kpis: dict) -> list:
     if not conteo_org.empty and len(conteo_org) > 1:
         rezagadas_org = conteo_org[conteo_org <= conteo_org.quantile(0.25)].index.tolist()
         if rezagadas_org:
-            recomendaciones.append(
+            _agregar(
+                "participacion_organizaciones",
                 f"Priorizar a las organizaciones con menor participacion en el periodo: "
-                f"{', '.join(rezagadas_org[:3])}."
+                f"{', '.join(rezagadas_org[:3])}.",
             )
 
     # Ejecucion presupuestal
     if kpis.get("pct_ejecucion_presupuestal", 0) < 60:
-        recomendaciones.append(
-            "Optimizar la distribucion y ejecucion del presupuesto asignado, actualmente por debajo del 60%."
+        _agregar(
+            "ejecucion_presupuestal",
+            "Optimizar la distribucion y ejecucion del presupuesto asignado, actualmente por debajo del 60%.",
         )
 
     # Programas de mayor impacto
     conteo_prog = df[df["estado"] == "Ejecutada"]["programa"].value_counts()
     if not conteo_prog.empty:
-        recomendaciones.append(
+        _agregar(
+            "programa_destacado",
             f"Reforzar el programa '{conteo_prog.index[0]}', que concentra el mayor numero de acciones "
-            f"ejecutadas exitosamente."
+            f"ejecutadas exitosamente.",
         )
 
     # Informacion incompleta
     campos_clave = ["documento", "organizacion", "localidad", "responsable"]
     incompletos = df[campos_clave].apply(lambda col: (col == "").sum()).sum()
     if incompletos > 0:
-        recomendaciones.append(
-            f"Actualizar la informacion incompleta detectada en {int(incompletos)} registros de campos clave."
+        _agregar(
+            "informacion_incompleta",
+            f"Actualizar la informacion incompleta detectada en {int(incompletos)} registros de campos clave.",
         )
 
     # Acciones pendientes
     if kpis.get("acciones_pendientes", 0) > 0:
-        recomendaciones.append(
+        _agregar(
+            "acciones_pendientes",
             f"Realizar seguimiento prioritario a las {kpis['acciones_pendientes']} acciones afirmativas "
-            f"pendientes de ejecucion."
+            f"pendientes de ejecucion.",
         )
 
-    if not recomendaciones:
-        recomendaciones.append(
+    if not detalladas:
+        _agregar(
+            "gestion_adecuada",
             "La gestion de las acciones afirmativas presenta un comportamiento adecuado; se recomienda "
-            "mantener el ritmo de ejecucion y monitoreo actual."
+            "mantener el ritmo de ejecucion y monitoreo actual.",
         )
 
-    return recomendaciones
+    return detalladas
+
+
+def generar_recomendaciones(df: pd.DataFrame, kpis: dict) -> list:
+    """
+    Genera una lista de recomendaciones accionables (solo texto) a partir de
+    los KPIs y del comportamiento de los datos filtrados. Mantiene el mismo
+    comportamiento y firma que siempre ha tenido esta funcion; internamente
+    delega en `_generar_recomendaciones_detalladas()`.
+    """
+    return [d["texto"] for d in _generar_recomendaciones_detalladas(df, kpis)]
+
+
+def generar_recomendaciones_matriz(df: pd.DataFrame, kpis: dict) -> list:
+    """
+    Version enriquecida de `generar_recomendaciones()`: retorna las mismas
+    recomendaciones (mismo texto, mismas reglas) pero acompanadas de
+    metadatos de priorizacion (impacto esperado, prioridad, responsable
+    sugerido y horizonte de implementacion). Pensada para la matriz visual
+    de recomendaciones del Informe Ejecutivo.
+    """
+    return _generar_recomendaciones_detalladas(df, kpis)
 
 
 # --------------------------------------------------------------------------------
-# Indicador de tendencia generico (usado en tarjetas KPI del Dashboard)
+# Indicador de tendencia generico (usado en tarjetas KPI del Dashboard y en
+# los elementos visuales del Informe Ejecutivo)
 # --------------------------------------------------------------------------------
-def tendencia_conteo(df: pd.DataFrame) -> str:
+def variacion_periodo(df: pd.DataFrame) -> dict:
     """
     Compara el numero de registros del ultimo trimestre disponible frente al
     trimestre inmediatamente anterior dentro del DataFrame recibido (ya
-    filtrado) y retorna un texto de tendencia listo para mostrar en una
-    tarjeta KPI, p. ej. '▲ 12.4% vs. periodo anterior'.
-    Retorna cadena vacia si no hay suficiente informacion para comparar.
+    filtrado). Retorna un valor numerico puro (sin simbolos ni texto), listo
+    para alimentar tanto texto como elementos graficos (flechas, chips de
+    tendencia):
+        {"delta_pct": float | None, "direccion": "up" | "down" | "flat" | "sin_datos"}
     """
     if df.empty or "fecha" not in df.columns or df["fecha"].isna().all():
-        return ""
+        return {"delta_pct": None, "direccion": "sin_datos"}
     d = df.dropna(subset=["fecha"]).copy()
     d["periodo"] = d["fecha"].apply(lambda f: (f.year, _trimestre(f)))
     periodos = sorted(d["periodo"].unique())
     if len(periodos) < 2:
-        return ""
+        return {"delta_pct": None, "direccion": "sin_datos"}
     actual = len(d[d["periodo"] == periodos[-1]])
     anterior = len(d[d["periodo"] == periodos[-2]])
     if anterior == 0:
+        return {"delta_pct": None, "direccion": "sin_datos"}
+    delta_pct = (actual - anterior) / anterior * 100
+    direccion = "up" if delta_pct > 0.5 else ("down" if delta_pct < -0.5 else "flat")
+    return {"delta_pct": round(delta_pct, 1), "direccion": direccion}
+
+
+def tendencia_conteo(df: pd.DataFrame) -> str:
+    """
+    Version en texto de `variacion_periodo()`, lista para mostrar en una
+    tarjeta KPI, p. ej. '▲ 12.4% vs. periodo anterior'. Retorna cadena vacia
+    si no hay suficiente informacion para comparar.
+    """
+    variacion = variacion_periodo(df)
+    if variacion["direccion"] == "sin_datos":
         return ""
-    variacion_pct = (actual - anterior) / anterior * 100
-    if variacion_pct > 0.5:
-        return f"▲ {variacion_pct:.1f}% vs. periodo anterior"
-    if variacion_pct < -0.5:
-        return f"▼ {abs(variacion_pct):.1f}% vs. periodo anterior"
+    if variacion["direccion"] == "up":
+        return f"▲ {variacion['delta_pct']:.1f}% vs. periodo anterior"
+    if variacion["direccion"] == "down":
+        return f"▼ {abs(variacion['delta_pct']):.1f}% vs. periodo anterior"
     return "▬ estable vs. periodo anterior"
 
 
@@ -342,7 +441,9 @@ def calcular_valor_publico(df: pd.DataFrame, df_documentos: pd.DataFrame, kpi: d
       componentes       : detalle de cada componente (dict).
       interpretacion     : texto ejecutivo segun el rango alcanzado.
       semaforo          : emoji de semaforo (🟢/🟡/🔴).
-      tendencia_texto    : variacion frente al trimestre anterior, si aplica.
+      tendencia_texto    : variacion frente al trimestre anterior, si aplica (texto).
+      tendencia_valor    : la misma variacion, como numero (float) o None.
+      tendencia_direccion: "up" | "down" | "flat" | "sin_datos".
     """
     total_maestro = kpi.get("total_recicladores", 0)
     componentes = _componentes_valor_publico(df, df_documentos, total_maestro)
@@ -358,6 +459,8 @@ def calcular_valor_publico(df: pd.DataFrame, df_documentos: pd.DataFrame, kpi: d
     # Tendencia: compara el valor del ultimo trimestre disponible frente al
     # trimestre anterior, reutilizando la misma metodologia de componentes.
     tendencia_texto = "Sin periodos suficientes para calcular tendencia."
+    tendencia_valor = None
+    tendencia_direccion = "sin_datos"
     if not df.empty and df["fecha"].notna().any():
         d = df.dropna(subset=["fecha"]).copy()
         d["periodo"] = d["fecha"].apply(lambda f: (f.year, _trimestre(f)))
@@ -370,7 +473,9 @@ def calcular_valor_publico(df: pd.DataFrame, df_documentos: pd.DataFrame, kpi: d
             vp_actual = sum(comp_actual[k] * p for k, p in _PESOS_VALOR_PUBLICO.items())
             vp_anterior = sum(comp_anterior[k] * p for k, p in _PESOS_VALOR_PUBLICO.items())
             delta = vp_actual - vp_anterior
-            flecha = "▲" if delta > 0.5 else ("▼" if delta < -0.5 else "▬")
+            tendencia_valor = round(delta, 1)
+            tendencia_direccion = "up" if delta > 0.5 else ("down" if delta < -0.5 else "flat")
+            flecha = "▲" if tendencia_direccion == "up" else ("▼" if tendencia_direccion == "down" else "▬")
             tendencia_texto = f"{flecha} {delta:+.1f} pts frente al trimestre anterior"
 
     return {
@@ -379,4 +484,56 @@ def calcular_valor_publico(df: pd.DataFrame, df_documentos: pd.DataFrame, kpi: d
         "interpretacion": interpretacion,
         "semaforo": semaforo,
         "tendencia_texto": tendencia_texto,
+        "tendencia_valor": tendencia_valor,
+        "tendencia_direccion": tendencia_direccion,
+    }
+
+
+# --------------------------------------------------------------------------------
+# Sintesis narrativa ejecutiva (usada en el Resumen Ejecutivo visual del
+# Informe Ejecutivo en PDF). No calcula ni inventa informacion nueva: solo
+# selecciona y resume los resultados que el resto del sistema ya produjo
+# (KPIs, Valor Publico Generado, alertas y recomendaciones).
+# --------------------------------------------------------------------------------
+def sintetizar_hallazgos_ejecutivos(kpi: dict, valor_publico: dict, alertas: list,
+                                     recomendaciones_matriz: list) -> dict:
+    """
+    Organiza los resultados ya calculados en cinco bloques narrativos breves
+    (maximo 2 lineas cada uno): hallazgos, logros, oportunidades, riesgos y
+    acciones prioritarias. Pensado para el Resumen Ejecutivo tipo
+    storytelling del Informe Ejecutivo (una idea por bloque, sin parrafos).
+    """
+    hallazgos = [
+        f"{kpi.get('total_acciones', 0):,} acciones afirmativas registradas, con "
+        f"{kpi.get('cobertura_pct', 0):.0f}% de cobertura sobre la poblacion.",
+        f"{kpi.get('total_organizaciones', 0):,} organizaciones activas agrupan a "
+        f"{kpi.get('beneficiarios_unicos', 0):,} beneficiarios unicos.",
+    ]
+
+    logros = [
+        f"{kpi.get('acciones_ejecutadas_anio', 0):,} acciones ejecutadas durante el ano en curso.",
+        f"Valor Publico Generado de {valor_publico.get('valor_pct', 0):.0f}% "
+        f"({valor_publico.get('interpretacion', '')}).",
+    ]
+
+    prioridad_alta = [d["texto"] for d in recomendaciones_matriz if d.get("prioridad") == "Alta"]
+    prioridad_media = [d["texto"] for d in recomendaciones_matriz if d.get("prioridad") == "Media"]
+    textos_generales = [d["texto"] for d in recomendaciones_matriz]
+
+    oportunidades = (prioridad_media or textos_generales)[:2]
+    acciones_prioritarias = (prioridad_alta or textos_generales)[:2]
+
+    alertas_altas = [a for a in alertas if a.get("severidad") == "alta"]
+    fuente_riesgos = alertas_altas or alertas
+    if fuente_riesgos:
+        riesgos = [f"{a['tipo']}: {a['mensaje']}" for a in fuente_riesgos[:2]]
+    else:
+        riesgos = ["No se identifican riesgos criticos para el periodo y filtros seleccionados."]
+
+    return {
+        "hallazgos": hallazgos[:2],
+        "logros": logros[:2],
+        "oportunidades": oportunidades[:2] or ["Sin oportunidades adicionales identificadas en el periodo."],
+        "riesgos": riesgos[:2],
+        "acciones_prioritarias": acciones_prioritarias[:2] or ["Mantener el ritmo de ejecucion y monitoreo actual."],
     }
