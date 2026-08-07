@@ -221,3 +221,162 @@ def generar_recomendaciones(df: pd.DataFrame, kpis: dict) -> list:
         )
 
     return recomendaciones
+
+
+# --------------------------------------------------------------------------------
+# Indicador de tendencia generico (usado en tarjetas KPI del Dashboard)
+# --------------------------------------------------------------------------------
+def tendencia_conteo(df: pd.DataFrame) -> str:
+    """
+    Compara el numero de registros del ultimo trimestre disponible frente al
+    trimestre inmediatamente anterior dentro del DataFrame recibido (ya
+    filtrado) y retorna un texto de tendencia listo para mostrar en una
+    tarjeta KPI, p. ej. '▲ 12.4% vs. periodo anterior'.
+    Retorna cadena vacia si no hay suficiente informacion para comparar.
+    """
+    if df.empty or "fecha" not in df.columns or df["fecha"].isna().all():
+        return ""
+    d = df.dropna(subset=["fecha"]).copy()
+    d["periodo"] = d["fecha"].apply(lambda f: (f.year, _trimestre(f)))
+    periodos = sorted(d["periodo"].unique())
+    if len(periodos) < 2:
+        return ""
+    actual = len(d[d["periodo"] == periodos[-1]])
+    anterior = len(d[d["periodo"] == periodos[-2]])
+    if anterior == 0:
+        return ""
+    variacion_pct = (actual - anterior) / anterior * 100
+    if variacion_pct > 0.5:
+        return f"▲ {variacion_pct:.1f}% vs. periodo anterior"
+    if variacion_pct < -0.5:
+        return f"▼ {abs(variacion_pct):.1f}% vs. periodo anterior"
+    return "▬ estable vs. periodo anterior"
+
+
+# --------------------------------------------------------------------------------
+# Valor Publico Generado: indicador sintetico de impacto institucional
+# --------------------------------------------------------------------------------
+_CAMPOS_CLAVE_COMPLETITUD = [
+    "documento", "nombre", "organizacion", "localidad", "tipo_accion",
+    "programa", "proyecto", "responsable", "estado", "beneficio",
+]
+
+_PESOS_VALOR_PUBLICO = {
+    "cobertura": 0.25,
+    "trazabilidad": 0.20,
+    "completitud_registros": 0.20,
+    "evidencia_documental": 0.20,
+    "seguimiento_oportuno": 0.15,
+}
+
+
+def _componentes_valor_publico(df: pd.DataFrame, df_documentos: pd.DataFrame,
+                                total_recicladores_maestro: int) -> dict:
+    """Calcula, sobre un DataFrame ya filtrado, los cinco componentes (0-100)
+    que integran el indicador sintetico 'Valor Publico Generado'."""
+    if df.empty:
+        return {k: 0.0 for k in _PESOS_VALOR_PUBLICO}
+
+    # 1. Cobertura de beneficiarios sobre la poblacion registrada.
+    beneficiarios_unicos = df["documento"].nunique()
+    cobertura = (
+        beneficiarios_unicos / total_recicladores_maestro * 100
+        if total_recicladores_maestro else 0.0
+    )
+    cobertura = min(cobertura, 100.0)
+
+    # 2. Completitud de registros: proporcion de acciones con todos los
+    #    campos clave diligenciados (sin vacios).
+    campos = [c for c in _CAMPOS_CLAVE_COMPLETITUD if c in df.columns]
+    completos = df[campos].apply(lambda fila: all(str(v).strip() != "" for v in fila), axis=1)
+    completitud_registros = completos.mean() * 100 if len(df) else 0.0
+
+    # 3. Trazabilidad completa: acciones con fecha, estado y responsable
+    #    asignados y con una ejecucion presupuestal coherente (no mayor a lo
+    #    presupuestado), como proxy de un ciclo de gestion bien documentado.
+    trazable = (
+        df["fecha"].notna()
+        & (df["estado"].astype(str).str.strip() != "")
+        & (df["responsable"].astype(str).str.strip() != "")
+        & (df["presupuesto_ejecutado"] <= df["presupuesto"] + 1)
+    )
+    trazabilidad = trazable.mean() * 100 if len(df) else 0.0
+
+    # 4. Evidencia documental: de las acciones ya ejecutadas, cuantas cuentan
+    #    con al menos un soporte cargado en Gestion Documental.
+    ejecutadas = df[df["estado"] == "Ejecutada"]
+    if len(ejecutadas) == 0:
+        evidencia_documental = 100.0  # no aplica: no se penaliza el indicador
+    elif df_documentos is not None and not df_documentos.empty:
+        ids_con_doc = set(df_documentos["accion_id"].unique())
+        evidencia_documental = ejecutadas["id"].isin(ids_con_doc).mean() * 100
+    else:
+        evidencia_documental = 0.0
+
+    # 5. Seguimiento oportuno: complemento de las acciones vencidas o que no
+    #    iniciaron a tiempo, sobre el total de acciones del periodo.
+    hoy = pd.Timestamp(datetime.now().date())
+    vencidas = (
+        (df["estado"] == "Vencida") | ((df["fecha"] < hoy) & (df["estado"] == "Planeada"))
+    ).sum()
+    seguimiento_oportuno = max(0.0, 100 - (vencidas / len(df) * 100)) if len(df) else 100.0
+
+    return {
+        "cobertura": round(cobertura, 1),
+        "trazabilidad": round(trazabilidad, 1),
+        "completitud_registros": round(completitud_registros, 1),
+        "evidencia_documental": round(evidencia_documental, 1),
+        "seguimiento_oportuno": round(seguimiento_oportuno, 1),
+    }
+
+
+def calcular_valor_publico(df: pd.DataFrame, df_documentos: pd.DataFrame, kpi: dict) -> dict:
+    """
+    Calcula el indicador compuesto 'Valor Publico Generado': una medida
+    sintetica (0-100%) del impacto institucional de la estrategia, construida
+    como el promedio ponderado de cinco componentes (ver
+    `_PESOS_VALOR_PUBLICO`). No representa una cifra financiera.
+
+    Retorna un diccionario con:
+      valor_pct        : porcentaje final (float).
+      componentes       : detalle de cada componente (dict).
+      interpretacion     : texto ejecutivo segun el rango alcanzado.
+      semaforo          : emoji de semaforo (🟢/🟡/🔴).
+      tendencia_texto    : variacion frente al trimestre anterior, si aplica.
+    """
+    total_maestro = kpi.get("total_recicladores", 0)
+    componentes = _componentes_valor_publico(df, df_documentos, total_maestro)
+    valor_pct = sum(componentes[k] * peso for k, peso in _PESOS_VALOR_PUBLICO.items())
+
+    if valor_pct >= 85:
+        interpretacion, semaforo = "Alto impacto institucional", "🟢"
+    elif valor_pct >= 65:
+        interpretacion, semaforo = "Impacto institucional moderado", "🟡"
+    else:
+        interpretacion, semaforo = "Impacto institucional en desarrollo", "🔴"
+
+    # Tendencia: compara el valor del ultimo trimestre disponible frente al
+    # trimestre anterior, reutilizando la misma metodologia de componentes.
+    tendencia_texto = "Sin periodos suficientes para calcular tendencia."
+    if not df.empty and df["fecha"].notna().any():
+        d = df.dropna(subset=["fecha"]).copy()
+        d["periodo"] = d["fecha"].apply(lambda f: (f.year, _trimestre(f)))
+        periodos = sorted(d["periodo"].unique())
+        if len(periodos) >= 2:
+            actual = d[d["periodo"] == periodos[-1]]
+            anterior = d[d["periodo"] == periodos[-2]]
+            comp_actual = _componentes_valor_publico(actual, df_documentos, total_maestro)
+            comp_anterior = _componentes_valor_publico(anterior, df_documentos, total_maestro)
+            vp_actual = sum(comp_actual[k] * p for k, p in _PESOS_VALOR_PUBLICO.items())
+            vp_anterior = sum(comp_anterior[k] * p for k, p in _PESOS_VALOR_PUBLICO.items())
+            delta = vp_actual - vp_anterior
+            flecha = "▲" if delta > 0.5 else ("▼" if delta < -0.5 else "▬")
+            tendencia_texto = f"{flecha} {delta:+.1f} pts frente al trimestre anterior"
+
+    return {
+        "valor_pct": round(valor_pct, 1),
+        "componentes": componentes,
+        "interpretacion": interpretacion,
+        "semaforo": semaforo,
+        "tendencia_texto": tendencia_texto,
+    }

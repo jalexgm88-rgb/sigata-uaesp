@@ -16,7 +16,11 @@ from docx import Document
 from docx.shared import Pt, RGBColor
 from fpdf import FPDF
 
-from config.settings import APP_ENTITY, APP_FULL_NAME, APP_NAME
+from config.settings import (
+    APP_ENTITY, APP_FULL_NAME, APP_NAME, APP_VERSION, LOGO_PATH,
+    PROYECTO_INVERSION, USUARIO_CONECTADO,
+)
+from modules.ui import fecha_larga_es
 
 
 def _write_wrapped(pdf: FPDF, texto: str, ancho_caracteres: int = 100, alto_linea: int = 6):
@@ -227,3 +231,259 @@ def generar_reporte_word(df: pd.DataFrame, kpis: dict, recomendaciones: list, an
     doc.save(buffer)
     buffer.seek(0)
     return buffer.getvalue()
+
+
+# --------------------------------------------------------------------------------
+# Informe Ejecutivo (PDF institucional para Alta Direccion)
+# --------------------------------------------------------------------------------
+def _asegurar_espacio(pdf: FPDF, alto_necesario: float):
+    """
+    Fuerza un salto de pagina manual si el bloque que sigue (de alto
+    aproximado `alto_necesario` en mm) no cabe en el espacio restante de la
+    pagina actual. Es necesario porque las barras dibujadas con rect() en
+    `_draw_barra_horizontal` no activan el salto de pagina automatico de
+    fpdf2 (que solo se dispara con cell()/multi_cell()).
+    """
+    espacio_restante = pdf.h - pdf.b_margin - pdf.get_y()
+    if alto_necesario > espacio_restante:
+        pdf.add_page()
+
+
+def _draw_barra_horizontal(pdf: FPDF, etiqueta: str, valor: float, valor_max: float,
+                            x: float, y: float, ancho_total: float = 110,
+                            alto: float = 5.4, color: tuple = (14, 110, 79)):
+    """
+    Dibuja una fila de grafico de barras horizontal simple usando primitivas
+    nativas de fpdf2 (rect + texto), evitando depender de una libreria de
+    graficos adicional (matplotlib/kaleido) que no forma parte del stack
+    actual del proyecto.
+    """
+    pdf.set_xy(x, y)
+    pdf.set_font("Helvetica", "", 8.5)
+    pdf.set_text_color(30, 30, 30)
+    pdf.cell(46, alto, etiqueta[:30], ln=0)
+
+    barra_x = x + 47
+    barra_ancho = (valor / valor_max * ancho_total) if valor_max else 0
+    pdf.set_fill_color(*color)
+    pdf.rect(barra_x, y + 0.4, max(barra_ancho, 0.5), alto - 1.2, "F")
+
+    pdf.set_xy(barra_x + ancho_total + 3, y)
+    pdf.set_font("Helvetica", "B", 8)
+    pdf.cell(20, alto, f"{valor:,.0f}", ln=1)
+
+
+class InformeEjecutivoPDF(FPDF):
+    """
+    Documento PDF de informe ejecutivo para Alta Direccion. A diferencia de
+    `ReportePDF` (reporte operativo de la pagina Reportes), este documento
+    incluye una portada institucional propia; por eso el banner verde de
+    encabezado solo se dibuja a partir de la segunda pagina.
+    """
+
+    def header(self):
+        if self.page_no() == 1:
+            return  # La portada dibuja su propio encabezado institucional.
+        self.set_fill_color(14, 110, 79)
+        self.rect(0, 0, 210, 18, "F")
+        self.set_text_color(255, 255, 255)
+        self.set_font("Helvetica", "B", 12)
+        self.set_xy(10, 5)
+        self.cell(0, 8, f"{APP_NAME} - Informe Ejecutivo", ln=1)
+        self.ln(4)
+        self.set_text_color(30, 30, 30)
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font("Helvetica", "I", 8)
+        self.set_text_color(120, 120, 120)
+        self.cell(
+            0, 10,
+            f"Pagina {self.page_no()} | Documento generado automaticamente por {APP_NAME} v{APP_VERSION} "
+            f"el {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            align="C",
+        )
+
+    def seccion(self, titulo: str):
+        self.set_font("Helvetica", "B", 12)
+        self.set_text_color(14, 110, 79)
+        self.cell(0, 8, titulo, ln=1)
+        self.set_text_color(30, 30, 30)
+        self.set_font("Helvetica", "", 10)
+
+
+def generar_informe_ejecutivo_pdf(
+    df: pd.DataFrame,
+    kpi: dict,
+    valor_publico: dict,
+    alertas: list,
+    recomendaciones: list,
+    analisis_texto: str,
+) -> bytes:
+    """
+    Genera el 'Informe Ejecutivo' en PDF con diseno institucional, pensado
+    para presentarse ante Alta Direccion / el Comite Institucional de Gestion
+    y Desempeno. Incluye: portada, indicadores estrategicos (incluyendo el
+    Valor Publico Generado), contexto del proyecto de inversion, resumen
+    ejecutivo, graficos principales (representados como barras nativas),
+    cobertura territorial (a modo de sintesis del mapa), alertas
+    identificadas y recomendaciones automaticas.
+    """
+    pdf = InformeEjecutivoPDF()
+    usuario = USUARIO_CONECTADO
+
+    # -------------------- Portada institucional --------------------
+    pdf.add_page()
+    pdf.set_fill_color(9, 74, 53)
+    pdf.rect(0, 0, 210, 297, "F")
+    pdf.set_fill_color(14, 110, 79)
+    pdf.rect(0, 0, 210, 90, "F")
+
+    try:
+        if LOGO_PATH.exists():
+            pdf.image(str(LOGO_PATH), x=15, y=15, w=70)
+    except Exception:
+        pass  # La portada se muestra igual si el logo no esta disponible.
+
+    # Se usa _write_wrapped() (envoltura manual con cell(), no multi_cell())
+    # para evitar el FPDFException ya conocido en multi_cell() con fpdf2, y se
+    # ajusta el margen izquierdo a 15mm para que las lineas envueltas
+    # continuen alineadas con el resto de la portada.
+    pdf.set_left_margin(15)
+    pdf.set_right_margin(15)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_xy(15, 100)
+    pdf.set_font("Helvetica", "B", 26)
+    _write_wrapped(pdf, "Informe Ejecutivo", ancho_caracteres=20, alto_linea=12)
+    pdf.set_x(15)
+    pdf.set_font("Helvetica", "", 13)
+    _write_wrapped(pdf, APP_FULL_NAME, ancho_caracteres=48, alto_linea=7)
+    pdf.set_x(15)
+    pdf.set_font("Helvetica", "", 11)
+    _write_wrapped(pdf, APP_ENTITY, ancho_caracteres=58, alto_linea=6)
+
+    pdf.set_xy(15, 230)
+    pdf.set_draw_color(255, 255, 255)
+    pdf.set_line_width(0.3)
+    pdf.line(15, 228, 195, 228)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_xy(15, 232)
+    pdf.cell(90, 6, "Proyecto de Inversion", ln=0)
+    pdf.cell(90, 6, "Fecha del informe", ln=1)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_x(15)
+    pdf.cell(90, 6, f"{PROYECTO_INVERSION['codigo']} - {PROYECTO_INVERSION['nombre']}"[:55], ln=0)
+    pdf.cell(90, 6, fecha_larga_es(), ln=1)
+
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_x(15)
+    pdf.cell(90, 6, "Generado por", ln=0)
+    pdf.cell(90, 6, "Cargo", ln=1)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_x(15)
+    pdf.cell(90, 6, usuario["nombre"], ln=0)
+    pdf.cell(90, 6, usuario["cargo"], ln=1)
+
+    # -------------------- Pagina 2: indicadores estrategicos --------------------
+    pdf.set_left_margin(10)
+    pdf.set_right_margin(10)
+    pdf.add_page()
+    pdf.set_text_color(30, 30, 30)
+
+    pdf.seccion("Indicadores estrategicos")
+    filas_kpi = [
+        ("Recicladores registrados", f"{kpi.get('total_recicladores', 0):,}"),
+        ("Organizaciones (ORO)", f"{kpi.get('total_organizaciones', 0):,}"),
+        ("Acciones afirmativas", f"{kpi.get('total_acciones', 0):,}"),
+        ("Beneficiarios unicos", f"{kpi.get('beneficiarios_unicos', 0):,}"),
+        ("Cobertura (%)", f"{kpi.get('cobertura_pct', 0)}%"),
+        ("Presupuesto ejecutado", f"${kpi.get('presupuesto_ejecutado', 0):,.0f} "
+                                   f"({kpi.get('pct_ejecucion_presupuestal', 0)}%)"),
+        ("Acciones pendientes", f"{kpi.get('acciones_pendientes', 0):,}"),
+        ("Alertas activas", f"{kpi.get('alertas_activas', 0):,}"),
+    ]
+    for etiqueta, valor in filas_kpi:
+        pdf.cell(95, 7, etiqueta, border=1)
+        pdf.cell(0, 7, str(valor), border=1, ln=1)
+    pdf.ln(4)
+
+    # -------------------- Valor Publico Generado --------------------
+    pdf.seccion("Valor Publico Generado")
+    pdf.set_font("Helvetica", "B", 20)
+    pdf.set_text_color(14, 110, 79)
+    pdf.cell(45, 12, f"{valor_publico['valor_pct']:.0f}%", ln=0)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.set_text_color(30, 30, 30)
+    pdf.cell(0, 12, f"{valor_publico['semaforo']}  {valor_publico['interpretacion']}", ln=1)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(90, 90, 90)
+    _write_wrapped(pdf, valor_publico["tendencia_texto"], ancho_caracteres=110)
+    _write_wrapped(
+        pdf,
+        "Indicador sintetico calculado a partir de cobertura de beneficiarios, trazabilidad de las "
+        "acciones, completitud de los registros, evidencia documental y oportunidad del seguimiento. "
+        "No corresponde a una cifra financiera.",
+        ancho_caracteres=110,
+    )
+    pdf.set_text_color(30, 30, 30)
+    pdf.ln(2)
+
+    # -------------------- Resumen ejecutivo --------------------
+    pdf.seccion("Resumen ejecutivo")
+    _write_wrapped(pdf, analisis_texto)
+    pdf.ln(3)
+
+    # -------------------- Graficos principales (acciones por tipo) --------------------
+    pdf.seccion("Graficos principales: acciones afirmativas por tipo")
+    if "tipo_accion" in df.columns and not df.empty:
+        conteo_tipo = df["tipo_accion"].value_counts().head(6)
+        if not conteo_tipo.empty:
+            _asegurar_espacio(pdf, 10 + len(conteo_tipo) * 7)
+            max_val = conteo_tipo.max()
+            y0 = pdf.get_y() + 2
+            for i, (etiqueta, valor) in enumerate(conteo_tipo.items()):
+                _draw_barra_horizontal(pdf, str(etiqueta), valor, max_val, x=10, y=y0 + i * 7)
+            pdf.set_y(y0 + len(conteo_tipo) * 7 + 4)
+    pdf.ln(2)
+
+    # -------------------- Cobertura territorial (sintesis del mapa) --------------------
+    pdf.seccion("Cobertura territorial (sintesis del mapa)")
+    pdf.set_font("Helvetica", "", 8.5)
+    _write_wrapped(
+        pdf,
+        "El mapa interactivo completo, con la ubicacion de organizaciones y recicladores por localidad, "
+        "esta disponible dentro de la aplicacion en la pagina 'Mapa'. A continuacion se resume la "
+        "cobertura de beneficiarios por localidad.",
+        ancho_caracteres=110,
+    )
+    if "localidad" in df.columns and not df.empty:
+        conteo_loc = df.groupby("localidad")["documento"].nunique().sort_values(ascending=False).head(8)
+        conteo_loc = conteo_loc[conteo_loc.index != ""]
+        if not conteo_loc.empty:
+            _asegurar_espacio(pdf, 10 + len(conteo_loc) * 7)
+            max_val = conteo_loc.max()
+            y0 = pdf.get_y() + 3
+            for i, (etiqueta, valor) in enumerate(conteo_loc.items()):
+                _draw_barra_horizontal(pdf, str(etiqueta), valor, max_val, x=10, y=y0 + i * 7,
+                                        color=(36, 100, 180))
+            pdf.set_y(y0 + len(conteo_loc) * 7 + 4)
+
+    # -------------------- Pagina 3: alertas y recomendaciones --------------------
+    pdf.add_page()
+    pdf.seccion("Alertas identificadas")
+    if alertas:
+        for a in alertas:
+            pdf.set_font("Helvetica", "B", 9)
+            _write_wrapped(pdf, f"[{a['severidad'].upper()}] {a['tipo']}", ancho_caracteres=105)
+            pdf.set_font("Helvetica", "", 9)
+            _write_wrapped(pdf, a["mensaje"], ancho_caracteres=105)
+            pdf.ln(1)
+    else:
+        _write_wrapped(pdf, "No se identifican alertas activas para el periodo y filtros seleccionados.")
+    pdf.ln(3)
+
+    pdf.seccion("Recomendaciones automaticas")
+    for r in recomendaciones:
+        _write_wrapped(pdf, f"- {r}")
+
+    return bytes(pdf.output())
