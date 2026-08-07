@@ -23,14 +23,41 @@ from config.settings import (
 from modules.ui import fecha_larga_es
 
 
+# Equivalencias en texto plano para simbolos Unicode usados en la interfaz
+# (flechas de tendencia, semaforos) que las fuentes core de PDF (Helvetica)
+# no pueden representar, ya que solo soportan el conjunto de caracteres
+# Latin-1/cp1252.
+_PDF_EQUIVALENCIAS_UNICODE = {
+    "▲": "+", "▼": "-", "▬": "=",
+    "🟢": "", "🟡": "", "🔴": "",
+    "–": "-", "—": "-", "’": "'", "“": '"', "”": '"',
+}
+
+
+def _pdf_safe_text(texto: str) -> str:
+    """
+    Convierte un texto arbitrario (que puede provenir de datos cargados por
+    el usuario o de textos generados dinamicamente) a una version segura
+    para las fuentes core de fpdf2. Sustituye simbolos conocidos por su
+    equivalente en texto plano y, como salvaguarda final, reemplaza
+    cualquier caracter restante fuera de Latin-1 para evitar que
+    `FPDFUnicodeEncodingException` interrumpa la generacion del informe.
+    """
+    texto = str(texto) if texto is not None else ""
+    for simbolo, equivalente in _PDF_EQUIVALENCIAS_UNICODE.items():
+        texto = texto.replace(simbolo, equivalente)
+    return texto.encode("latin-1", errors="replace").decode("latin-1")
+
+
 def _write_wrapped(pdf: FPDF, texto: str, ancho_caracteres: int = 100, alto_linea: int = 6):
     """
     Escribe texto envolviendo lineas manualmente con textwrap y dibujando cada
     linea con pdf.cell(). Evita un problema conocido de fpdf2 en el que
     multi_cell() puede lanzar FPDFException ("Not enough horizontal space to
     render a single character") en ciertas combinaciones de texto y ancho.
+    El texto se sanea con `_pdf_safe_text()` antes de envolverlo.
     """
-    texto = str(texto) if texto else ""
+    texto = _pdf_safe_text(texto)
     lineas = textwrap.wrap(texto, width=ancho_caracteres) or [""]
     for linea in lineas:
         pdf.cell(0, alto_linea, linea, ln=1)
@@ -236,6 +263,16 @@ def generar_reporte_word(df: pd.DataFrame, kpis: dict, recomendaciones: list, an
 # --------------------------------------------------------------------------------
 # Informe Ejecutivo (PDF institucional para Alta Direccion)
 # --------------------------------------------------------------------------------
+# Colores RGB usados para dibujar el semaforo del Valor Publico Generado
+# como un circulo (en vez del caracter emoji devuelto por
+# `modules.analisis.calcular_valor_publico`).
+_SEMAFORO_COLORES = {
+    "🟢": (30, 158, 90),
+    "🟡": (224, 161, 0),
+    "🔴": (192, 57, 43),
+}
+
+
 def _asegurar_espacio(pdf: FPDF, alto_necesario: float):
     """
     Fuerza un salto de pagina manual si el bloque que sigue (de alto
@@ -261,7 +298,7 @@ def _draw_barra_horizontal(pdf: FPDF, etiqueta: str, valor: float, valor_max: fl
     pdf.set_xy(x, y)
     pdf.set_font("Helvetica", "", 8.5)
     pdf.set_text_color(30, 30, 30)
-    pdf.cell(46, alto, etiqueta[:30], ln=0)
+    pdf.cell(46, alto, _pdf_safe_text(etiqueta)[:30], ln=0)
 
     barra_x = x + 47
     barra_ancho = (valor / valor_max * ancho_total) if valor_max else 0
@@ -372,7 +409,8 @@ def generar_informe_ejecutivo_pdf(
     pdf.cell(90, 6, "Fecha del informe", ln=1)
     pdf.set_font("Helvetica", "", 10)
     pdf.set_x(15)
-    pdf.cell(90, 6, f"{PROYECTO_INVERSION['codigo']} - {PROYECTO_INVERSION['nombre']}"[:55], ln=0)
+    texto_proyecto = _pdf_safe_text(f"{PROYECTO_INVERSION['codigo']} - {PROYECTO_INVERSION['nombre']}")[:55]
+    pdf.cell(90, 6, texto_proyecto, ln=0)
     pdf.cell(90, 6, fecha_larga_es(), ln=1)
 
     pdf.set_font("Helvetica", "B", 10)
@@ -381,8 +419,8 @@ def generar_informe_ejecutivo_pdf(
     pdf.cell(90, 6, "Cargo", ln=1)
     pdf.set_font("Helvetica", "", 10)
     pdf.set_x(15)
-    pdf.cell(90, 6, usuario["nombre"], ln=0)
-    pdf.cell(90, 6, usuario["cargo"], ln=1)
+    pdf.cell(90, 6, _pdf_safe_text(usuario["nombre"]), ln=0)
+    pdf.cell(90, 6, _pdf_safe_text(usuario["cargo"]), ln=1)
 
     # -------------------- Pagina 2: indicadores estrategicos --------------------
     pdf.set_left_margin(10)
@@ -408,13 +446,22 @@ def generar_informe_ejecutivo_pdf(
     pdf.ln(4)
 
     # -------------------- Valor Publico Generado --------------------
+    # El semaforo se dibuja como un circulo de color (en vez de incrustar el
+    # caracter emoji, que las fuentes core de fpdf2 no pueden representar).
     pdf.seccion("Valor Publico Generado")
+    y_fila = pdf.get_y()
     pdf.set_font("Helvetica", "B", 20)
     pdf.set_text_color(14, 110, 79)
     pdf.cell(45, 12, f"{valor_publico['valor_pct']:.0f}%", ln=0)
+
+    color_semaforo = _SEMAFORO_COLORES.get(valor_publico["semaforo"], (140, 140, 140))
+    pdf.set_fill_color(*color_semaforo)
+    pdf.ellipse(pdf.get_x() + 1, y_fila + 4, 5, 5, style="F")
+    pdf.set_xy(pdf.get_x() + 9, y_fila)
+
     pdf.set_font("Helvetica", "B", 11)
     pdf.set_text_color(30, 30, 30)
-    pdf.cell(0, 12, f"{valor_publico['semaforo']}  {valor_publico['interpretacion']}", ln=1)
+    pdf.cell(0, 12, _pdf_safe_text(valor_publico["interpretacion"]), ln=1)
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(90, 90, 90)
     _write_wrapped(pdf, valor_publico["tendencia_texto"], ancho_caracteres=110)
