@@ -16,6 +16,8 @@ Ejecucion:
 --------------------------------------------------------------------------------
 """
 
+from datetime import datetime
+
 import streamlit as st
 
 from config.settings import APP_NAME, APP_PROJECT
@@ -24,9 +26,11 @@ from modules.alertas import generar_alertas
 from modules.database import get_acciones_df, get_documentos_df, get_metadata, init_db
 from modules.demo_data_generator import generar_datos_demo
 from modules.filtros import aplicar_filtros, render_filtros_sidebar
+from modules.reportes import generar_informe_ejecutivo_pdf
 from modules.analisis import (
     analizar_beneficios, analizar_cobertura_localidad, analizar_evolucion,
-    analizar_presupuesto, analizar_tipo_accion, generar_recomendaciones,
+    analizar_presupuesto, analizar_tipo_accion, calcular_valor_publico,
+    generar_recomendaciones, tendencia_conteo,
 )
 
 st.set_page_config(
@@ -60,6 +64,11 @@ with st.expander("Sobre el proyecto de investigacion", expanded=False):
     st.write(APP_PROJECT)
 
 # --------------------------------------------------------------------------------
+# Contexto institucional: proyecto de inversion asociado a la estrategia
+# --------------------------------------------------------------------------------
+ui.render_proyecto_inversion()
+
+# --------------------------------------------------------------------------------
 # Carga de datos y filtros
 # --------------------------------------------------------------------------------
 df_completo = get_acciones_df()
@@ -85,6 +94,7 @@ if df_completo.empty:
 alertas = generar_alertas(df, df_documentos)
 total_recicladores_maestro = df_completo["documento"].nunique()
 kpi = kpis.compute_kpis(df, total_recicladores_maestro=total_recicladores_maestro, alertas_activas=len(alertas))
+tendencia_acciones = tendencia_conteo(df)
 
 # --------------------------------------------------------------------------------
 # Tarjetas KPI
@@ -92,36 +102,70 @@ kpi = kpis.compute_kpis(df, total_recicladores_maestro=total_recicladores_maestr
 ui.section_title("Indicadores clave")
 c1, c2, c3, c4, c5 = st.columns(5)
 with c1:
-    ui.render_kpi_card("Recicladores registrados", f"{kpi['total_recicladores']:,}")
+    ui.render_kpi_card("Recicladores registrados", f"{kpi['total_recicladores']:,}", icono="♻")
 with c2:
-    ui.render_kpi_card("Organizaciones (ORO)", f"{kpi['total_organizaciones']:,}", variant="blue")
+    ui.render_kpi_card("Organizaciones (ORO)", f"{kpi['total_organizaciones']:,}", variant="blue", icono="🏢")
 with c3:
-    ui.render_kpi_card("Acciones afirmativas", f"{kpi['total_acciones']:,}")
+    ui.render_kpi_card("Acciones afirmativas", f"{kpi['total_acciones']:,}", icono="📋", tendencia=tendencia_acciones)
 with c4:
-    ui.render_kpi_card("Beneficiarios unicos", f"{kpi['beneficiarios_unicos']:,}", variant="blue")
+    ui.render_kpi_card("Beneficiarios unicos", f"{kpi['beneficiarios_unicos']:,}", variant="blue", icono="🧑‍🤝‍🧑")
 with c5:
-    ui.render_kpi_card("Cobertura", f"{kpi['cobertura_pct']:.1f}%", "sobre poblacion registrada")
+    ui.render_kpi_card("Cobertura", f"{kpi['cobertura_pct']:.1f}%", "sobre poblacion registrada", icono="🎯")
 
 c6, c7, c8, c9, c10 = st.columns(5)
 with c6:
     ui.render_kpi_card("Presupuesto ejecutado", kpis.formatear_moneda(kpi["presupuesto_ejecutado"]),
-                        f"{kpi['pct_ejecucion_presupuestal']:.1f}% del total")
+                        f"{kpi['pct_ejecucion_presupuestal']:.1f}% del total", icono="💰")
 with c7:
-    ui.render_kpi_card("Presupuesto disponible", kpis.formatear_moneda(kpi["presupuesto_disponible"]), variant="blue")
+    ui.render_kpi_card("Presupuesto disponible", kpis.formatear_moneda(kpi["presupuesto_disponible"]),
+                        variant="blue", icono="🏦")
 with c8:
-    ui.render_kpi_card("Ejecutadas este año", f"{kpi['acciones_ejecutadas_anio']:,}")
+    ui.render_kpi_card("Ejecutadas este año", f"{kpi['acciones_ejecutadas_anio']:,}", icono="✅")
 with c9:
-    ui.render_kpi_card("Acciones pendientes", f"{kpi['acciones_pendientes']:,}", variant="warning")
+    ui.render_kpi_card("Acciones pendientes", f"{kpi['acciones_pendientes']:,}", variant="warning", icono="⏳")
 with c10:
     ui.render_kpi_card("Alertas activas", f"{kpi['alertas_activas']:,}",
-                        "revisar pagina de Alertas", variant="danger" if kpi["alertas_activas"] > 3 else "warning")
+                        "revisar pagina de Alertas", variant="danger" if kpi["alertas_activas"] > 3 else "warning",
+                        icono="🔔")
+
+# --------------------------------------------------------------------------------
+# Valor Publico Generado (indicador sintetico de impacto institucional)
+# --------------------------------------------------------------------------------
+ui.section_title("Valor Publico Generado")
+valor_publico = calcular_valor_publico(df, df_documentos, kpi)
+ui.render_valor_publico_card(valor_publico)
+
+# Se calculan una sola vez aqui para reutilizarse tanto en el Informe
+# Ejecutivo como en las secciones de analisis y recomendaciones mas abajo.
+recomendaciones = generar_recomendaciones(df, kpi)
+analisis_texto = analizar_evolucion(df)
+
+# --------------------------------------------------------------------------------
+# Exportar Informe Ejecutivo (PDF institucional para Alta Direccion)
+# --------------------------------------------------------------------------------
+ui.section_title("Exportar Informe Ejecutivo")
+st.caption(
+    "Genera un informe en PDF con diseno institucional para Alta Direccion: portada, "
+    "indicadores estrategicos, Valor Publico Generado, resumen ejecutivo, graficos "
+    "principales, sintesis del mapa, alertas identificadas y recomendaciones automaticas."
+)
+informe_pdf_bytes = generar_informe_ejecutivo_pdf(
+    df, kpi, valor_publico, alertas, recomendaciones, analisis_texto,
+)
+st.download_button(
+    "📥 Exportar Informe Ejecutivo",
+    data=informe_pdf_bytes,
+    file_name=f"SIGATA_Informe_Ejecutivo_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+    mime="application/pdf",
+    type="primary",
+)
 
 # --------------------------------------------------------------------------------
 # Evolucion historica
 # --------------------------------------------------------------------------------
 ui.section_title("Evolucion historica de acciones afirmativas")
 st.plotly_chart(charts.evolucion_historica(df), use_container_width=True)
-ui.render_analysis(analizar_evolucion(df))
+ui.render_analysis(analisis_texto)
 
 # --------------------------------------------------------------------------------
 # Fila: tipo de accion / cobertura por localidad
@@ -185,7 +229,6 @@ with col_der5:
 # --------------------------------------------------------------------------------
 # Recomendaciones automaticas
 # --------------------------------------------------------------------------------
-recomendaciones = generar_recomendaciones(df, kpi)
 ui.render_recomendaciones(recomendaciones)
 
 st.caption(
